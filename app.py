@@ -19,11 +19,11 @@ conn = connect(
     aws_secret_access_key=aws_secret_key
 )
 
-# Cargar datos
+# Consulta y carga de datos
 query = "SELECT * FROM test.cuentas"
 df = pd.read_sql(query, conn)
 
-# Procesamiento de datos
+# Procesamiento
 if 'fecha' in df.columns:
     df['fecha'] = pd.to_datetime(df['fecha'], errors='coerce')
 
@@ -36,54 +36,72 @@ if df.empty:
     st.warning("⚠️ No hay datos disponibles para mostrar.")
     st.stop()
 
-# Sidebar - Filtros
+# ==============================
+# SIDEBAR: FILTROS
+# ==============================
+
 st.sidebar.header("🔍 Filtros")
 
-# Cliente
-if 'cliente' in df.columns:
-    clientes = df['cliente'].dropna().unique()
-    cliente = st.sidebar.selectbox("Cliente", ["Todos"] + list(clientes))
-    if cliente != "Todos":
-        df = df[df['cliente'] == cliente]
+# Copia del DataFrame para filtrar
+filtered_df = df.copy()
 
-# Nombre proyecto
+# Filtro por Cliente
+if 'cliente' in df.columns:
+    clientes = sorted(df['cliente'].dropna().unique())
+    cliente = st.sidebar.selectbox("Cliente", ["Todos"] + clientes)
+    if cliente != "Todos":
+        filtered_df = filtered_df[filtered_df['cliente'] == cliente]
+
+# Filtro por Proyecto
 if 'nombre_proyecto' in df.columns:
-    proyectos = df['nombre_proyecto'].dropna().unique()
+    proyectos = sorted(filtered_df['nombre_proyecto'].dropna().unique())
     proyecto = st.sidebar.selectbox("Proyecto", ["Todos"] + list(proyectos))
     if proyecto != "Todos":
-        df = df[df['nombre_proyecto'] == proyecto]
+        filtered_df = filtered_df[filtered_df['nombre_proyecto'] == proyecto]
 
-# Fecha
-if 'fecha' in df.columns:
-    min_date = df['fecha'].min()
-    max_date = df['fecha'].max()
+# Filtro por Fecha
+if 'fecha' in filtered_df.columns:
+    min_date = filtered_df['fecha'].min()
+    max_date = filtered_df['fecha'].max()
     fecha_inicio = st.sidebar.date_input("Desde", min_value=min_date, value=min_date)
-    fecha_fin = st.sidebar.date_input("Hasta", max_value=max_date, value=max_date)
-    df = df[(df['fecha'] >= pd.to_datetime(fecha_inicio)) & (df['fecha'] <= pd.to_datetime(fecha_fin))]
+    fecha_fin = st.sidebar.date_input("Hasta", min_value=min_date, value=max_date)
+    filtered_df = filtered_df[
+        (filtered_df['fecha'] >= pd.to_datetime(fecha_inicio)) &
+        (filtered_df['fecha'] <= pd.to_datetime(fecha_fin))
+    ]
 
-# Rango de ganancia
-if 'ganancia' in df.columns:
-    min_g = int(df['ganancia'].min())
-    max_g = int(df['ganancia'].max())
-    rango_ganancia = st.sidebar.slider("Rango de Ganancia", min_value=min_g, max_value=max_g, value=(min_g, max_g))
-    df = df[df['ganancia'].between(rango_ganancia[0], rango_ganancia[1])]
+# Filtro por Rango de Ganancia
+if 'ganancia' in filtered_df.columns:
+    ganancia_min = int(filtered_df['ganancia'].min())
+    ganancia_max = int(filtered_df['ganancia'].max())
+    rango = st.sidebar.slider("Rango de Ganancia", min_value=ganancia_min, max_value=ganancia_max,
+                              value=(ganancia_min, ganancia_max))
+    filtered_df = filtered_df[filtered_df['ganancia'].between(rango[0], rango[1])]
 
-# Mostrar aviso si no hay resultados
-if df.empty:
+# Mostrar aviso si el resultado está vacío
+if filtered_df.empty:
     st.warning("⚠️ No hay resultados para los filtros seleccionados.")
     st.stop()
 
+# ==============================
 # KPIs
-col1, col2, col3 = st.columns(3)
-col1.metric("💼 Total Valor Proyectos", f"${df['valor_proyecto'].sum():,.0f}" if 'valor_proyecto' in df.columns else "N/A")
-col2.metric("💸 Total Gastado", f"${df['gastado'].sum():,.0f}" if 'gastado' in df.columns else "N/A")
-col3.metric("💰 Ganancia Total", f"${df['ganancia'].sum():,.0f}" if 'ganancia' in df.columns else "N/A")
+# ==============================
 
-# Gráfico
-if 'cliente' in df.columns and 'ganancia' in df.columns:
+st.markdown("### 📌 Indicadores Generales")
+
+col1, col2, col3 = st.columns(3)
+col1.metric("💼 Total Valor Proyectos", f"${filtered_df['valor_proyecto'].sum():,.0f}")
+col2.metric("💸 Total Gastado", f"${filtered_df['gastado'].sum():,.0f}")
+col3.metric("💰 Ganancia Total", f"${filtered_df['ganancia'].sum():,.0f}")
+
+# ==============================
+# GRÁFICO DE GANANCIA POR CLIENTE
+# ==============================
+
+if 'cliente' in filtered_df.columns and 'ganancia' in filtered_df.columns:
     st.subheader("📈 Ganancia por Cliente")
     fig = px.bar(
-        df,
+        filtered_df.groupby("cliente", as_index=False)["ganancia"].sum(),
         x="cliente",
         y="ganancia",
         color="cliente",
@@ -94,6 +112,9 @@ if 'cliente' in df.columns and 'ganancia' in df.columns:
     fig.update_layout(uniformtext_minsize=8, uniformtext_mode='hide')
     st.plotly_chart(fig, use_container_width=True)
 
-# Tabla
+# ==============================
+# TABLA DE DETALLES
+# ==============================
+
 st.subheader("📋 Detalles por Proyecto")
-st.dataframe(df, use_container_width=True)
+st.dataframe(filtered_df, use_container_width=True)
