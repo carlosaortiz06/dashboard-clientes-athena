@@ -9,8 +9,8 @@ st.set_page_config(page_title="Dashboard Financiero", layout="wide")
 st.title("📊 Dashboard Financiero de Clientes")
 
 # Conectar a Athena con credenciales ocultas
-aws_access_key = st.secrets["aws_access_key_id"]
-aws_secret_key = st.secrets["aws_secret_access_key"]
+aws_access_key = st.secrets["AWS_ACCESS_KEY_ID"]
+aws_secret_key = st.secrets["AWS_SECRET_ACCESS_KEY"]
 
 conn = connect(
     s3_staging_dir="s3://datos-financieros-carlos/athena-results/",
