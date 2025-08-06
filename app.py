@@ -9,7 +9,7 @@ st.title("📊 Dashboard de Administración - Clientes")
 conn = connect(
     aws_access_key_id=st.secrets["AWS_ACCESS_KEY_ID"],
     aws_secret_access_key=st.secrets["AWS_SECRET_ACCESS_KEY"],
-    s3_staging_dir='s3://TU-BUCKET/athena-results/',
+    s3_staging_dir='s3://datos-financieros-carlos/athena-results/',
     region_name=st.secrets["AWS_REGION"]
 )
 
