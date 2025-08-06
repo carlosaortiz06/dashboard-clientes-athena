@@ -8,7 +8,7 @@ from datetime import datetime
 st.set_page_config(page_title="Dashboard Financiero", layout="wide")
 st.title("📊 Dashboard Financiero de Clientes")
 
-# Conectar a Athena
+# Conectar a Athena con variables secretas
 aws_access_key = st.secrets["AWS_ACCESS_KEY_ID"]
 aws_secret_key = st.secrets["AWS_SECRET_ACCESS_KEY"]
 
@@ -19,11 +19,11 @@ conn = connect(
     aws_secret_access_key=aws_secret_key
 )
 
-# Consulta de datos
+# Consulta y carga de datos
 query = "SELECT * FROM test.cuentas"
 df = pd.read_sql(query, conn)
 
-# Procesamiento de datos
+# Procesamiento
 if 'fecha' in df.columns:
     df['fecha'] = pd.to_datetime(df['fecha'], errors='coerce')
 
@@ -31,9 +31,9 @@ for col in ['valor_proyecto', 'gastado', 'ganancia']:
     if col in df.columns:
         df[col] = pd.to_numeric(df[col], errors='coerce')
 
-# Validación de datos
+# Validar si hay datos
 if df.empty:
-    st.warning("⚠️ No hay datos disponibles.")
+    st.warning("⚠️ No hay datos disponibles para mostrar.")
     st.stop()
 
 # ==============================
@@ -43,39 +43,32 @@ if df.empty:
 st.sidebar.header("🔍 Filtros")
 filtered_df = df.copy()
 
-# Filtro Cliente
-clientes = sorted(df['cliente'].dropna().unique().tolist())
-cliente_seleccionado = st.sidebar.selectbox("Cliente", ["Todos"] + clientes)
+# Filtro por Cliente
+if 'cliente' in df.columns:
+    clientes = sorted(df['cliente'].dropna().unique())
+    cliente = st.sidebar.selectbox("Cliente", ["Todos"] + clientes)
+    if cliente != "Todos":
+        filtered_df = filtered_df[filtered_df['cliente'] == cliente]
 
-if cliente_seleccionado != "Todos":
-    filtered_df = filtered_df[filtered_df['cliente'] == cliente_seleccionado]
+# Filtro por Proyecto
+if 'nombre_proyecto' in df.columns:
+    proyectos = sorted(filtered_df['nombre_proyecto'].dropna().unique())
+    proyecto = st.sidebar.selectbox("Proyecto", ["Todos"] + list(proyectos))
+    if proyecto != "Todos":
+        filtered_df = filtered_df[filtered_df['nombre_proyecto'] == proyecto]
 
-# Filtro Proyecto
-proyectos = sorted(filtered_df['nombre_proyecto'].dropna().unique().tolist())
-proyecto_seleccionado = st.sidebar.selectbox("Proyecto", ["Todos"] + proyectos)
-
-if proyecto_seleccionado != "Todos":
-    filtered_df = filtered_df[filtered_df['nombre_proyecto'] == proyecto_seleccionado]
-
-# Filtro Fecha
-if 'fecha' in filtered_df.columns and not filtered_df['fecha'].isnull().all():
-    min_fecha = filtered_df['fecha'].min()
-    max_fecha = filtered_df['fecha'].max()
-    fecha_inicio = st.sidebar.date_input("Desde", min_value=min_fecha, value=min_fecha)
-    fecha_fin = st.sidebar.date_input("Hasta", min_value=min_fecha, value=max_fecha)
+# Filtro por Fecha
+if 'fecha' in filtered_df.columns:
+    min_date = filtered_df['fecha'].min()
+    max_date = filtered_df['fecha'].max()
+    fecha_inicio = st.sidebar.date_input("Desde", min_value=min_date, value=min_date)
+    fecha_fin = st.sidebar.date_input("Hasta", min_value=min_date, value=max_date)
     filtered_df = filtered_df[
-        (filtered_df['fecha'] >= pd.to_datetime(fecha_inicio)) &
+        (filtered_df['fecha'] >= pd.to_datetime(fecha_inicio)) & 
         (filtered_df['fecha'] <= pd.to_datetime(fecha_fin))
     ]
 
-# Filtro Ganancia
-if 'ganancia' in filtered_df.columns and not filtered_df['ganancia'].isnull().all():
-    ganancia_min = int(filtered_df['ganancia'].min())
-    ganancia_max = int(filtered_df['ganancia'].max())
-    rango = st.sidebar.slider("Rango de Ganancia", ganancia_min, ganancia_max, (ganancia_min, ganancia_max))
-    filtered_df = filtered_df[filtered_df['ganancia'].between(rango[0], rango[1])]
-
-# Validar después de aplicar filtros
+# Mostrar aviso si no hay resultados
 if filtered_df.empty:
     st.warning("⚠️ No hay resultados para los filtros seleccionados.")
     st.stop()
@@ -85,6 +78,7 @@ if filtered_df.empty:
 # ==============================
 
 st.markdown("### 📌 Indicadores Generales")
+
 col1, col2, col3 = st.columns(3)
 col1.metric("💼 Total Valor Proyectos", f"${filtered_df['valor_proyecto'].sum():,.0f}")
 col2.metric("💸 Total Gastado", f"${filtered_df['gastado'].sum():,.0f}")
