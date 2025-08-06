@@ -64,9 +64,38 @@ if 'fecha' in filtered_df.columns:
     fecha_inicio = st.sidebar.date_input("Desde", min_value=min_date, value=min_date)
     fecha_fin = st.sidebar.date_input("Hasta", min_value=min_date, value=max_date)
     filtered_df = filtered_df[
-        (filtered_df['fecha'] >= pd.to_datetime(fecha_inicio)) & 
+        (filtered_df['fecha'] >= pd.to_datetime(fecha_inicio)) &
         (filtered_df['fecha'] <= pd.to_datetime(fecha_fin))
     ]
+
+# ==============================
+# SIDEBAR: FORMULARIO DE NUEVO CLIENTE
+# ==============================
+
+st.sidebar.markdown("---")
+st.sidebar.header("➕ Añadir nuevo proyecto")
+
+with st.sidebar.form("form_nuevo_proyecto"):
+    nuevo_cliente = st.text_input("Cliente")
+    nuevo_proyecto = st.text_input("Nombre del Proyecto")
+    nuevo_valor = st.number_input("Valor del Proyecto", min_value=0.0)
+    nuevo_gasto = st.number_input("Gastado", min_value=0.0)
+    nueva_fecha = st.date_input("Fecha")
+    submitted = st.form_submit_button("Guardar")
+
+    if submitted:
+        nueva_ganancia = nuevo_valor - nuevo_gasto
+        nuevo_registro = {
+            "cliente": nuevo_cliente,
+            "nombre_proyecto": nuevo_proyecto,
+            "valor_proyecto": nuevo_valor,
+            "gastado": nuevo_gasto,
+            "ganancia": nueva_ganancia,
+            "fecha": pd.to_datetime(nueva_fecha)
+        }
+        df = pd.concat([df, pd.DataFrame([nuevo_registro])], ignore_index=True)
+        filtered_df = df.copy()
+        st.sidebar.success("✅ Proyecto añadido (solo en la sesión actual).")
 
 # Mostrar aviso si no hay resultados
 if filtered_df.empty:
