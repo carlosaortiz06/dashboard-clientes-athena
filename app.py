@@ -1,51 +1,67 @@
 import streamlit as st
 import pandas as pd
 from pyathena import connect
+import plotly.express as px
+from datetime import datetime
 
-# Título
-st.title("📊 Dashboard de Administración - Clientes")
+# Configuración de la página
+st.set_page_config(page_title="Dashboard Financiero", layout="wide")
+st.title("📊 Dashboard Financiero de Clientes")
 
-# Conexión a Athena
+# Conectar a Athena con credenciales ocultas
+aws_access_key = st.secrets["aws_access_key_id"]
+aws_secret_key = st.secrets["aws_secret_access_key"]
+
 conn = connect(
-    aws_access_key_id=st.secrets["AWS_ACCESS_KEY_ID"],
-    aws_secret_access_key=st.secrets["AWS_SECRET_ACCESS_KEY"],
-    s3_staging_dir='s3://datos-financieros-carlos/athena-results/',
-    region_name=st.secrets["AWS_REGION"]
+    s3_staging_dir="s3://datos-financieros-carlos/athena-results/",
+    region_name="us-east-1",
+    aws_access_key_id=aws_access_key,
+    aws_secret_access_key=aws_secret_key
 )
 
-# Consulta a la tabla completa
+# Consulta automática (tú no escribes nada)
 query = "SELECT * FROM test.cuentas"
 df = pd.read_sql(query, conn)
 
+# Convertir fechas si hay columna de fecha (opcional)
+if 'fecha' in df.columns:
+    df['fecha'] = pd.to_datetime(df['fecha'], errors='coerce')
+
+# Convertir valores numéricos
+for col in ['valor_proyecto', 'gastado', 'ganancia']:
+    if col in df.columns:
+        df[col] = pd.to_numeric(df[col], errors='coerce')
+
+# Filtros visuales (tú solo eliges del menú)
+st.sidebar.header("🔍 Filtros")
+
+clientes = df['cliente'].dropna().unique()
+cliente = st.sidebar.selectbox("Cliente", options=["Todos"] + list(clientes))
+
+if 'fecha' in df.columns:
+    min_date = df['fecha'].min()
+    max_date = df['fecha'].max()
+    fecha_inicio = st.sidebar.date_input("Desde", min_value=min_date, value=min_date)
+    fecha_fin = st.sidebar.date_input("Hasta", max_value=max_date, value=max_date)
+
+    df = df[(df['fecha'] >= pd.to_datetime(fecha_inicio)) & (df['fecha'] <= pd.to_datetime(fecha_fin))]
+
+if cliente != "Todos":
+    df = df[df['cliente'] == cliente]
+
+# KPIs
+col1, col2, col3 = st.columns(3)
+col1.metric("💼 Total Valor Proyectos", f"${df['valor_proyecto'].sum():,.0f}")
+col2.metric("💸 Total Gastado", f"${df['gastado'].sum():,.0f}")
+col3.metric("💰 Ganancia Total", f"${df['ganancia'].sum():,.0f}")
+
+# Gráfico por cliente
+st.subheader("📈 Ganancia por Cliente")
+grafico = px.bar(df, x="cliente", y="ganancia", color="cliente", text="ganancia", title="Ganancias")
+grafico.update_traces(texttemplate='%{text:$,.0f}', textposition='outside')
+grafico.update_layout(uniformtext_minsize=8, uniformtext_mode='hide')
+st.plotly_chart(grafico, use_container_width=True)
+
 # Mostrar tabla completa
-st.subheader("🔎 Datos completos")
-st.dataframe(df)
-
-# Métricas generales
-st.subheader("📈 Métricas Generales")
-st.metric("💰 Ganancia total", f"${int(df['ganancia'].sum()):,}")
-st.metric("💸 Total Gastado", f"${int(df['gastado'].sum()):,}")
-st.metric("📦 Valor total de proyectos", f"${int(df['valor_proyecto'].sum()):,}")
-
-# Gráfico: Ganancia por cliente
-st.subheader("📊 Ganancia por cliente")
-ganancia_por_cliente = df.groupby("cliente")["ganancia"].sum().reset_index()
-st.bar_chart(ganancia_por_cliente.set_index("cliente"))
-
-# Gráfico: Ganancia por mes (si tienes una columna "fecha")
-if "fecha" in df.columns:
-    df['fecha'] = pd.to_datetime(df['fecha'])
-    df['mes'] = df['fecha'].dt.to_period('M')
-    ganancia_por_mes = df.groupby("mes")["ganancia"].sum().reset_index()
-    st.subheader("📅 Ganancia mensual")
-    st.line_chart(ganancia_por_mes.set_index("mes"))
-
-# Consulta personalizada (opcional)
-st.subheader("🛠 Consulta SQL personalizada (opcional)")
-user_query = st.text_area("Escribe una consulta SQL (ej: SELECT * FROM test.cuentas WHERE cliente = 'cliente1')")
-if st.button("Ejecutar consulta"):
-    try:
-        df_custom = pd.read_sql(user_query, conn)
-        st.dataframe(df_custom)
-    except Exception as e:
-        st.error(f"Error en la consulta: {e}")
+st.subheader("📋 Detalles por Proyecto")
+st.dataframe(df, use_container_width=True)
