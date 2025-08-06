@@ -2,7 +2,9 @@ import streamlit as st
 import pandas as pd
 from pyathena import connect
 import plotly.express as px
-from datetime import datetime
+import boto3
+import csv
+from io import StringIO
 
 # Configuración de página
 st.set_page_config(page_title="Dashboard Financiero", layout="wide")
@@ -24,9 +26,6 @@ query = "SELECT * FROM test.cuentas"
 df = pd.read_sql(query, conn)
 
 # Procesamiento
-if 'fecha' in df.columns:
-    df['fecha'] = pd.to_datetime(df['fecha'], errors='coerce')
-
 for col in ['valor_proyecto', 'gastado', 'ganancia']:
     if col in df.columns:
         df[col] = pd.to_numeric(df[col], errors='coerce')
@@ -57,17 +56,6 @@ if 'nombre_proyecto' in df.columns:
     if proyecto != "Todos":
         filtered_df = filtered_df[filtered_df['nombre_proyecto'] == proyecto]
 
-# Filtro por Fecha
-if 'fecha' in filtered_df.columns:
-    min_date = filtered_df['fecha'].min()
-    max_date = filtered_df['fecha'].max()
-    fecha_inicio = st.sidebar.date_input("Desde", min_value=min_date, value=min_date)
-    fecha_fin = st.sidebar.date_input("Hasta", min_value=min_date, value=max_date)
-    filtered_df = filtered_df[
-        (filtered_df['fecha'] >= pd.to_datetime(fecha_inicio)) &
-        (filtered_df['fecha'] <= pd.to_datetime(fecha_fin))
-    ]
-
 # ==============================
 # SIDEBAR: FORMULARIO DE NUEVO CLIENTE
 # ==============================
@@ -80,7 +68,7 @@ with st.sidebar.form("form_nuevo_proyecto"):
     nuevo_proyecto = st.text_input("Nombre del Proyecto")
     nuevo_valor = st.number_input("Valor del Proyecto", min_value=0.0)
     nuevo_gasto = st.number_input("Gastado", min_value=0.0)
-    nueva_fecha = st.date_input("Fecha")
+    nueva_fecha = st.date_input("Fecha", value=datetime.today())  # Fecha actual
     submitted = st.form_submit_button("Guardar")
 
     if submitted:
@@ -91,10 +79,31 @@ with st.sidebar.form("form_nuevo_proyecto"):
             "valor_proyecto": nuevo_valor,
             "gastado": nuevo_gasto,
             "ganancia": nueva_ganancia,
-            "fecha": pd.to_datetime(nueva_fecha)
         }
-        df = pd.concat([df, pd.DataFrame([nuevo_registro])], ignore_index=True)
-        filtered_df = df.copy()
+        # Guardar el registro en S3
+        s3_client = boto3.client('s3', aws_access_key_id=aws_access_key, aws_secret_access_key=aws_secret_key)
+        bucket_name = "datos-financieros-carlos"
+        file_name = "nuevos_proyectos.csv"
+        
+        # Leer el archivo CSV existente desde S3
+        try:
+            obj = s3_client.get_object(Bucket=bucket_name, Key=file_name)
+            csv_data = obj['Body'].read().decode('utf-8').splitlines()
+            csv_reader = csv.reader(csv_data)
+            existing_data = list(csv_reader)
+        except s3_client.exceptions.NoSuchKey:
+            existing_data = []
+
+        # Agregar el nuevo registro
+        new_row = [nuevo_cliente, nuevo_proyecto, nuevo_valor, nuevo_gasto, nueva_ganancia]
+        existing_data.append(new_row)
+        
+        # Escribir el archivo actualizado en S3
+        output = StringIO()
+        csv_writer = csv.writer(output)
+        csv_writer.writerows(existing_data)
+        s3_client.put_object(Body=output.getvalue(), Bucket=bucket_name, Key=file_name)
+        
         st.sidebar.success("✅ Proyecto añadido (solo en la sesión actual).")
 
 # Mostrar aviso si no hay resultados
