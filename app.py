@@ -5,6 +5,7 @@ import plotly.express as px
 import boto3
 import csv
 from io import StringIO
+from datetime import datetime  # Asegurarse de importar datetime
 
 # Configuración de página
 st.set_page_config(page_title="Dashboard Financiero", layout="wide")
@@ -68,8 +69,8 @@ with st.sidebar.form("form_nuevo_proyecto"):
     nuevo_proyecto = st.text_input("Nombre del Proyecto")
     nuevo_valor = st.number_input("Valor del Proyecto", min_value=0.0)
     nuevo_gasto = st.number_input("Gastado", min_value=0.0)
-    nueva_fecha = st.date_input("Fecha", value=datetime.today())  # Fecha actual
-    submitted = st.form_submit_button("Guardar")
+    nueva_fecha = st.date_input("Fecha", value=datetime.today())  # Asegúrate de importar datetime
+    submitted = st.form_submit_button("Guardar")  # Botón de envío dentro del formulario
 
     if submitted:
         nueva_ganancia = nuevo_valor - nuevo_gasto
