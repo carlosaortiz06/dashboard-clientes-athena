@@ -9,7 +9,7 @@ from datetime import datetime  # Asegurarse de importar datetime
 
 # Configuración de página
 st.set_page_config(page_title="Dashboard Financiero", layout="wide")
-st.title("📊 Dashboard Financiero de Clientes")
+st.title("📊 Dashboard JHK")
 
 # Conectar a Athena con variables secretas
 aws_access_key = st.secrets["AWS_ACCESS_KEY_ID"]
