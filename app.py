@@ -81,11 +81,12 @@ with st.sidebar.form("form_nuevo_proyecto"):
             "gastado": nuevo_gasto,
             "ganancia": nueva_ganancia,
         }
-        # Guardar el registro en S3
+        
+        # Guardar el registro en S3 en la ruta correcta
         s3_client = boto3.client('s3', aws_access_key_id=aws_access_key, aws_secret_access_key=aws_secret_key)
         bucket_name = "datos-financieros-carlos"
-        file_name = "nuevos_proyectos.csv"
-        
+        file_name = "proyectos-carlos-2025/datos.csv"  # Cambiar la ruta
+
         # Leer el archivo CSV existente desde S3
         try:
             obj = s3_client.get_object(Bucket=bucket_name, Key=file_name)
