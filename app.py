@@ -69,7 +69,6 @@ with st.sidebar.form("form_nuevo_proyecto"):
     nuevo_proyecto = st.text_input("Nombre del Proyecto")
     nuevo_valor = st.number_input("Valor del Proyecto", min_value=0.0)
     nuevo_gasto = st.number_input("Gastado", min_value=0.0)
-    nueva_fecha = st.date_input("Fecha", value=datetime.today())  # Asegúrate de importar datetime
     submitted = st.form_submit_button("Guardar")  # Botón de envío dentro del formulario
 
     if submitted:
@@ -93,8 +92,10 @@ with st.sidebar.form("form_nuevo_proyecto"):
             csv_data = obj['Body'].read().decode('utf-8').splitlines()
             csv_reader = csv.reader(csv_data)
             existing_data = list(csv_reader)
+            st.sidebar.write("Datos existentes leídos correctamente.")
         except s3_client.exceptions.NoSuchKey:
             existing_data = []
+            st.sidebar.write("Archivo no encontrado. Creando uno nuevo.")
 
         # Agregar el nuevo registro
         new_row = [nuevo_cliente, nuevo_proyecto, nuevo_valor, nuevo_gasto, nueva_ganancia]
@@ -106,7 +107,7 @@ with st.sidebar.form("form_nuevo_proyecto"):
         csv_writer.writerows(existing_data)
         s3_client.put_object(Body=output.getvalue(), Bucket=bucket_name, Key=file_name)
         
-        st.sidebar.success("✅ Proyecto añadido (solo en la sesión actual).")
+        st.sidebar.success("✅ Proyecto añadido y guardado en S3.")
 
 # Mostrar aviso si no hay resultados
 if filtered_df.empty:
