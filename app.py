@@ -1,121 +1,139 @@
 import streamlit as st
 import pandas as pd
-import boto3
-import os
+from pyathena import connect
 import plotly.express as px
+from datetime import datetime
 
-# Configuración de la página
-st.set_page_config(page_title="Dashboard de Clientes", layout="wide")
+# Configuración de página
+st.set_page_config(page_title="Dashboard Financiero", layout="wide")
+st.title("📊 Dashboard Financiero de Clientes")
 
-# Conexión a AWS Athena
-def cargar_datos_athena():
-    session = boto3.Session(
-        aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID"),
-        aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY"),
-        region_name="us-east-1"
-    )
+# Conectar a Athena con variables secretas
+aws_access_key = st.secrets["AWS_ACCESS_KEY_ID"]
+aws_secret_key = st.secrets["AWS_SECRET_ACCESS_KEY"]
 
-    athena_client = session.client("athena")
-    query = """
-        SELECT * FROM bd_dashboard.dashboard_clientes
-    """
-    response = athena_client.start_query_execution(
-        QueryString=query,
-        QueryExecutionContext={"Database": "bd_dashboard"},
-        ResultConfiguration={"OutputLocation": "s3://resultados-athena-carlos/"}
-    )
-
-    execution_id = response["QueryExecutionId"]
-
-    # Esperar que termine la consulta
-    state = "RUNNING"
-    while state in ["RUNNING", "QUEUED"]:
-        response = athena_client.get_query_execution(QueryExecutionId=execution_id)
-        state = response["QueryExecution"]["Status"]["State"]
-
-    if state == "SUCCEEDED":
-        result = athena_client.get_query_results(QueryExecutionId=execution_id)
-        columnas = [col["VarCharValue"] for col in result["ResultSet"]["Rows"][0]["Data"]]
-        filas = result["ResultSet"]["Rows"][1:]
-        datos = []
-        for fila in filas:
-            valores = [col.get("VarCharValue", "") for col in fila["Data"]]
-            datos.append(valores)
-        df = pd.DataFrame(datos, columns=columnas)
-        return df
-    else:
-        st.error("Error al ejecutar la consulta.")
-        return pd.DataFrame()
-
-# Cargar datos
-df = cargar_datos_athena()
-
-# Asegurar tipos numéricos
-for col in ["valor_proyecto", "gastado", "ganancia"]:
-    if col in df.columns:
-        df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
-
-st.title("📊 Dashboard de Clientes y Proyectos")
-
-# Filtros en la barra lateral
-with st.sidebar:
-    st.header("🔍 Filtros")
-    clientes = df["cliente"].unique().tolist()
-    cliente_sel = st.multiselect("Cliente", clientes, default=clientes)
-
-    proyectos = df["nombre_proyecto"].unique().tolist()
-    proyecto_sel = st.multiselect("Proyecto", proyectos, default=proyectos)
-
-# Aplicar filtros
-filtered_df = df[
-    df["cliente"].isin(cliente_sel) &
-    df["nombre_proyecto"].isin(proyecto_sel)
-]
-
-# KPIs
-col1, col2, col3 = st.columns(3)
-col1.metric("💰 Valor Total", f"${filtered_df['valor_proyecto'].sum():,.2f}")
-col2.metric("💸 Total Gastado", f"${filtered_df['gastado'].sum():,.2f}")
-col3.metric("📈 Ganancia Total", f"${filtered_df['ganancia'].sum():,.2f}")
-
-st.markdown("---")
-
-# Gráfica de ganancias por cliente
-fig = px.bar(
-    filtered_df,
-    x="cliente",
-    y="ganancia",
-    color="nombre_proyecto",
-    title="Ganancia por Cliente y Proyecto",
-    barmode="group"
+conn = connect(
+    s3_staging_dir="s3://datos-financieros-carlos/athena-results/",
+    region_name="us-east-1",
+    aws_access_key_id=aws_access_key,
+    aws_secret_access_key=aws_secret_key
 )
-st.plotly_chart(fig, use_container_width=True)
 
-# Tabla de datos filtrados
-st.subheader("📄 Detalle de Datos")
-st.dataframe(filtered_df, use_container_width=True)
+# Consulta y carga de datos
+query = "SELECT * FROM test.cuentas"
+df = pd.read_sql(query, conn)
 
-# Añadir nuevo cliente
+# Procesamiento
+if 'fecha' in df.columns:
+    df['fecha'] = pd.to_datetime(df['fecha'], errors='coerce')
+
+for col in ['valor_proyecto', 'gastado', 'ganancia']:
+    if col in df.columns:
+        df[col] = pd.to_numeric(df[col], errors='coerce')
+
+# Validar si hay datos
+if df.empty:
+    st.warning("⚠️ No hay datos disponibles para mostrar.")
+    st.stop()
+
+# ==============================
+# SIDEBAR: FILTROS
+# ==============================
+
+st.sidebar.header("🔍 Filtros")
+filtered_df = df.copy()
+
+# Filtro por Cliente
+if 'cliente' in df.columns:
+    clientes = sorted(df['cliente'].dropna().unique())
+    cliente = st.sidebar.selectbox("Cliente", ["Todos"] + clientes)
+    if cliente != "Todos":
+        filtered_df = filtered_df[filtered_df['cliente'] == cliente]
+
+# Filtro por Proyecto
+if 'nombre_proyecto' in df.columns:
+    proyectos = sorted(filtered_df['nombre_proyecto'].dropna().unique())
+    proyecto = st.sidebar.selectbox("Proyecto", ["Todos"] + list(proyectos))
+    if proyecto != "Todos":
+        filtered_df = filtered_df[filtered_df['nombre_proyecto'] == proyecto]
+
+# Filtro por Fecha
+if 'fecha' in filtered_df.columns:
+    min_date = filtered_df['fecha'].min()
+    max_date = filtered_df['fecha'].max()
+    fecha_inicio = st.sidebar.date_input("Desde", min_value=min_date, value=min_date)
+    fecha_fin = st.sidebar.date_input("Hasta", min_value=min_date, value=max_date)
+    filtered_df = filtered_df[
+        (filtered_df['fecha'] >= pd.to_datetime(fecha_inicio)) &
+        (filtered_df['fecha'] <= pd.to_datetime(fecha_fin))
+    ]
+
+# ==============================
+# SIDEBAR: FORMULARIO DE NUEVO CLIENTE
+# ==============================
+
 st.sidebar.markdown("---")
-st.sidebar.header("➕ Añadir Nuevo Cliente")
+st.sidebar.header("➕ Añadir nuevo proyecto")
 
-with st.sidebar.form("nuevo_cliente"):
+with st.sidebar.form("form_nuevo_proyecto"):
     nuevo_cliente = st.text_input("Cliente")
     nuevo_proyecto = st.text_input("Nombre del Proyecto")
-    nuevo_valor = st.number_input("Valor del Proyecto", min_value=0.0, step=100.0)
-    nuevo_gasto = st.number_input("Gastado", min_value=0.0, step=100.0)
-    submitted = st.form_submit_button("Añadir")
+    nuevo_valor = st.number_input("Valor del Proyecto", min_value=0.0)
+    nuevo_gasto = st.number_input("Gastado", min_value=0.0)
+    nueva_fecha = st.date_input("Fecha")
+    submitted = st.form_submit_button("Guardar")
 
-    if submitted and nuevo_cliente and nuevo_proyecto:
+    if submitted:
         nueva_ganancia = nuevo_valor - nuevo_gasto
-        nuevo_registro = pd.DataFrame([{
+        nuevo_registro = {
             "cliente": nuevo_cliente,
             "nombre_proyecto": nuevo_proyecto,
             "valor_proyecto": nuevo_valor,
             "gastado": nuevo_gasto,
-            "ganancia": nueva_ganancia
-        }])
-        df = pd.concat([df, nuevo_registro], ignore_index=True)
-        filtered_df = pd.concat([filtered_df, nuevo_registro], ignore_index=True)
+            "ganancia": nueva_ganancia,
+            "fecha": pd.to_datetime(nueva_fecha)
+        }
+        df = pd.concat([df, pd.DataFrame([nuevo_registro])], ignore_index=True)
+        filtered_df = df.copy()
         st.sidebar.success("✅ Proyecto añadido (solo en la sesión actual).")
 
+# Mostrar aviso si no hay resultados
+if filtered_df.empty:
+    st.warning("⚠️ No hay resultados para los filtros seleccionados.")
+    st.stop()
+
+# ==============================
+# KPIs
+# ==============================
+
+st.markdown("### 📌 Indicadores Generales")
+
+col1, col2, col3 = st.columns(3)
+col1.metric("💼 Total Valor Proyectos", f"${filtered_df['valor_proyecto'].sum():,.0f}")
+col2.metric("💸 Total Gastado", f"${filtered_df['gastado'].sum():,.0f}")
+col3.metric("💰 Ganancia Total", f"${filtered_df['ganancia'].sum():,.0f}")
+
+# ==============================
+# GRÁFICO DE GANANCIA POR CLIENTE
+# ==============================
+
+if 'cliente' in filtered_df.columns and 'ganancia' in filtered_df.columns:
+    st.subheader("📈 Ganancia por Cliente")
+    fig = px.bar(
+        filtered_df.groupby("cliente", as_index=False)["ganancia"].sum(),
+        x="cliente",
+        y="ganancia",
+        color="cliente",
+        text="ganancia",
+        title="Ganancias por Cliente"
+    )
+    fig.update_traces(texttemplate='%{text:$,.0f}', textposition='outside')
+    fig.update_layout(uniformtext_minsize=8, uniformtext_mode='hide')
+    st.plotly_chart(fig, use_container_width=True)
+
+# ==============================
+# TABLA DE DETALLES
+# ==============================
+
+st.subheader("📋 Detalles por Proyecto")
+st.dataframe(filtered_df, use_container_width=True)
